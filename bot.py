@@ -17,9 +17,9 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-DATA_FILE   = "bookings.json"   # зберігає бронювання користувачів
-DRIVERS_FILE= "drivers.json"    # {"drivers":[telegram_id,...]}
-ROUTES_FILE = "routes.json"     # {"YYYY-MM-DD HH:MM Напрямок": {"driver_id": ..., "date":"...", "time":"...", "direction":"..."}}
+DATA_FILE = "bookings.json"
+DRIVERS_FILE = "drivers.json"
+ROUTES_FILE = "routes.json"
 CANCEL_TEXT = "❌ Відмінити"
 
 # ====================== UTILS: JSON ======================
@@ -34,18 +34,18 @@ def _save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-def load_data():    return _load_json(DATA_FILE, {})
-def save_data(d):   _save_json(DATA_FILE, d)
-
+def load_data(): return _load_json(DATA_FILE, {})
+def save_data(d): _save_json(DATA_FILE, d)
 def load_drivers(): return _load_json(DRIVERS_FILE, {"drivers": []})
-def save_drivers(d):_save_json(DRIVERS_FILE, d)
-
-def load_routes():  return _load_json(ROUTES_FILE, {})
+def save_drivers(d): _save_json(DRIVERS_FILE, d)
+def load_routes(): return _load_json(ROUTES_FILE, {})
 def save_routes(r): _save_json(ROUTES_FILE, r)
 
 # ====================== ROLES & MENUS ======================
 def is_admin(uid:int)->bool:  return uid in ADMINS
-def is_driver(uid:int)->bool: return uid in load_drivers().get("drivers", []) or is_admin(uid)
+def is_driver(uid:int)->bool:
+    d = load_drivers().get("drivers", [])
+    return any(x["id"] == uid for x in d) or is_admin(uid)
 
 def main_menu(uid:int)->ReplyKeyboardMarkup:
     rows = [
@@ -61,11 +61,9 @@ def rows_of(items, n=3):
 
 # ====================== SCHEDULE HELPERS ======================
 def base_times_for(direction:str):
-    # Рокитне → Київ
     if ("Рокитне" in direction) and ("→ Київ" in direction):
         return ["05:00","05:30","06:00","07:00","08:00","09:00",
                 "10:00","12:00","13:00","14:00","15:00","16:00","17:00"]
-    # Київ → Рокитне
     return [f"{h:02d}:00" for h in range(8, 21)]
 
 def user_dates_7days():
@@ -92,34 +90,34 @@ def trip_key(date_str:str, time_str:str, direction:str)->str:
 
 # ====================== STATES ======================
 class BookingStates(StatesGroup):
-    waiting_for_seats   = State()
-    waiting_for_date    = State()
+    waiting_for_seats = State()
+    waiting_for_date = State()
     waiting_for_direction = State()
-    waiting_for_time    = State()
+    waiting_for_time = State()
     waiting_for_comment = State()
-    waiting_for_phone   = State()
-    driver_wait_phone   = State()  # для ручного бронювання
+    waiting_for_phone = State()
+    driver_wait_phone = State()
 
 class AdminStates(StatesGroup):
     waiting_for_direction = State()
-    waiting_for_date      = State()
-    waiting_for_time      = State()
+    waiting_for_date = State()
+    waiting_for_time = State()
 
 class DriverMgmtStates(StatesGroup):
-    waiting_for_action      = State()
-    waiting_for_new_driver  = State()
+    waiting_for_action = State()
+    waiting_for_new_driver = State()
     waiting_for_remove_driver = State()
 
 class RoutesStates(StatesGroup):
-    pick_date     = State()
-    pick_direction= State()
-    pick_time     = State()
-    pick_driver   = State()
+    pick_date = State()
+    pick_direction = State()
+    pick_time = State()
+    pick_driver = State()
 
 class MyRoutesStates(StatesGroup):
-    manual_date     = State()
-    manual_direction= State()
-    manual_time     = State()
+    manual_date = State()
+    manual_direction = State()
+    manual_time = State()
 
 # ====================== START & CANCEL ======================
 @dp.message(CommandStart())
@@ -138,10 +136,14 @@ async def cancel_any(msg: types.Message, state: FSMContext):
     await state.clear()
     await msg.answer("Дію скасовано.", reply_markup=main_menu(msg.from_user.id))
 
-# ====================== BOOKING (USER + DRIVER) ======================
+@dp.message(F.text == "🏠 Повернутись в головне меню")
+async def back_to_main(msg: types.Message, state: FSMContext):
+    await state.clear()
+    await msg.answer("🏠 Головне меню:", reply_markup=main_menu(msg.from_user.id))
+
+# ====================== BOOKING ======================
 @dp.message(F.text == "🚐 Забронювати місце")
 async def book_start(msg: types.Message, state: FSMContext):
-    # звичайний режим (для водія є окрема кнопка ручного бронювання)
     await state.update_data(driver_mode=False)
     kb = ReplyKeyboardMarkup(
         keyboard=[
@@ -159,7 +161,6 @@ async def process_seats(msg: types.Message, state: FSMContext):
         await msg.answer("Введіть число місць (1–9).")
         return
     await state.update_data(seats=seats)
-
     is_driver_mode = (await state.get_data()).get("driver_mode", False)
     dates = driver_dates_minus3_plus7() if is_driver_mode else user_dates_7days()
     kb = [[KeyboardButton(text=str(d))] for d in dates]
@@ -174,7 +175,6 @@ async def process_date(msg: types.Message, state: FSMContext):
     except:
         await msg.answer("Будь ласка, оберіть дату із кнопок.")
         return
-
     await state.update_data(date=str(selected_date))
     kb = ReplyKeyboardMarkup(
         keyboard=[
@@ -191,14 +191,11 @@ async def process_direction(msg: types.Message, state: FSMContext):
     direction = msg.text
     ud = await state.get_data()
     selected_date = datetime.strptime(ud["date"], "%Y-%m-%d").date()
-
-    # користувач → фільтр 20 хв; водій/адмін у driver_mode → без фільтру
     times = base_times_for(direction) if ud.get("driver_mode") else filtered_times_for_user(direction, selected_date)
     if not times:
         await msg.answer("На обрану дату немає доступних рейсів.", reply_markup=main_menu(msg.from_user.id))
         await state.clear()
         return
-
     kb_rows = rows_of([KeyboardButton(text=t) for t in times], 3)
     kb_rows.append([KeyboardButton(text=CANCEL_TEXT)])
     await state.update_data(direction=direction)
@@ -208,7 +205,6 @@ async def process_direction(msg: types.Message, state: FSMContext):
 @dp.message(BookingStates.waiting_for_time)
 async def process_time(msg: types.Message, state: FSMContext):
     await state.update_data(time=msg.text)
-    # Підказки посадки за напрямком
     direction = (await state.get_data())["direction"]
     if "Рокитне" in direction and "→ Київ" in direction:
         kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Біля автостанції")],[KeyboardButton(text=CANCEL_TEXT)]],
@@ -223,14 +219,10 @@ async def process_time(msg: types.Message, state: FSMContext):
 async def process_comment(msg: types.Message, state: FSMContext):
     await state.update_data(comment=msg.text)
     ud = await state.get_data()
-
-    # ручне бронювання водієм → попросити телефон текстом
     if ud.get("driver_mode"):
         await msg.answer("Введіть номер телефону пасажира (+380XXXXXXXXX) або інший опис.")
         await state.set_state(BookingStates.driver_wait_phone)
         return
-
-    # звичайний користувач → контакт
     data = load_data()
     uid = str(msg.from_user.id)
     phone = data.get(uid, {}).get("phone")
@@ -265,11 +257,9 @@ async def finalize_booking(msg: types.Message, state: FSMContext, phone: str, cr
     data = load_data()
     uid = str(msg.from_user.id)
     ud = await state.get_data()
-
     comment = ud["comment"]
     if created_by_driver:
         comment = f"{comment} (створено водієм)"
-
     booking = {
         "date": ud["date"],
         "time": ud["time"],
@@ -278,43 +268,28 @@ async def finalize_booking(msg: types.Message, state: FSMContext, phone: str, cr
         "comment": comment,
         "phone": phone,
         "created_by_driver": created_by_driver,
-        "driver_id": msg.from_user.id if created_by_driver else None
+        "driver_id": msg.from_user.id if created_by_driver else None,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-
     if uid not in data:
         data[uid] = {"bookings": [], "phone": None if created_by_driver else phone}
     data[uid]["bookings"].append(booking)
     save_data(data)
-
     await state.clear()
     await msg.answer("✅ Бронювання підтверджено!", reply_markup=main_menu(msg.from_user.id))
 
-# ====================== "МОЇ БРОНЮВАННЯ" + CANCEL INLINE ======================
-def clean_and_get_upcoming(user_id:str):
-    data = load_data()
-    user = data.get(user_id, {"bookings": [], "phone": None})
-    now = datetime.now()
-    upcoming = []
-    for b in user.get("bookings", []):
-        try:
-            dep = datetime.strptime(f"{b['date']} {b['time']}", "%Y-%m-%d %H:%M")
-            if dep > now:
-                upcoming.append(b)
-        except:
-            continue
-    data[user_id]["bookings"] = upcoming
-    save_data(data)
-    return upcoming
-
+# ====================== МОЇ БРОНЮВАННЯ ======================
 @dp.message(F.text == "📋 Мої бронювання")
 async def my_bookings(msg: types.Message):
     uid = str(msg.from_user.id)
-    upcoming = clean_and_get_upcoming(uid)
+    data = load_data()
+    user = data.get(uid, {"bookings": []})
+    upcoming = [b for b in user.get("bookings", []) if datetime.strptime(f"{b['date']} {b['time']}", "%Y-%m-%d %H:%M") > datetime.now()]
     if not upcoming:
         await msg.answer("У вас немає активних бронювань.")
         return
     for b in upcoming:
-        text = f"📅 {b['date']} | 🕒 {b['time']} | {b['direction']} | {b['seats']} місць\n📍 {b['comment']}"
+        text = f"📅 {b['date']} | 🕒 {b['time']} | {b['direction']} | {b['seats']} місць\n📍 {b['comment']}\n🕒 Створено: {b.get('created_at','?')}"
         cb = f"cancel:{b['date']}|{b['time']}|{b['direction']}"
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Скасувати", callback_data=cb)]])
         await msg.answer(text, reply_markup=kb)
@@ -327,16 +302,41 @@ async def cancel_booking_cb(call: CallbackQuery):
     data = load_data()
     user = data.get(uid, {"bookings": []})
     before = len(user["bookings"])
-    user["bookings"] = [
-        b for b in user["bookings"]
-        if not (b["date"] == date_str and b["time"] == time_str and b["direction"] == direction)
-    ]
+    user["bookings"] = [b for b in user["bookings"] if not (b["date"] == date_str and b["time"] == time_str and b["direction"] == direction)]
     data[uid] = user
     save_data(data)
     if len(user["bookings"]) < before:
         await call.message.edit_text("✅ Бронювання скасовано.")
     else:
         await call.answer("Бронювання не знайдено.", show_alert=True)
+
+# ====================== ADMIN / DRIVER PANEL ======================
+@dp.message(F.text == "👨‍✈️ Адмін-панель")
+async def admin_panel(msg: types.Message, state: FSMContext):
+    uid = msg.from_user.id
+    if not is_driver(uid):
+        await msg.answer("⛔ Доступ лише для водіїв/адміністраторів.")
+        return
+
+    rows = [
+        [KeyboardButton(text="🚌 Обрати поїздку")],
+        [KeyboardButton(text="🚐 Додати бронювання вручну")],
+        [KeyboardButton(text="📋 Мої рейси")],
+        [KeyboardButton(text="🕒 Переглянути рейс вручну")]
+    ]
+    if is_admin(uid):
+        rows.insert(3, [KeyboardButton(text="📅 Керування рейсами")])
+        rows.insert(4, [KeyboardButton(text="👨‍✈️ Керування водіями")])
+    rows.append([KeyboardButton(text="🏠 Повернутись в головне меню")])
+
+    await msg.answer("👨‍✈️ Адмін-панель: оберіть дію",
+                     reply_markup=ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True))
+
+# ====================== RUN ======================
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(dp.start_polling(bot))
+
 
 # ====================== ADMIN / DRIVER PANEL ======================
 @dp.message(F.text == "👨‍✈️ Адмін-панель")
