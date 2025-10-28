@@ -332,10 +332,6 @@ async def admin_panel(msg: types.Message, state: FSMContext):
     await msg.answer("👨‍✈️ Адмін-панель: оберіть дію",
                      reply_markup=ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True))
 
-# ====================== RUN ======================
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(dp.start_polling(bot))
 
 
 # ====================== ADMIN / DRIVER PANEL ======================
