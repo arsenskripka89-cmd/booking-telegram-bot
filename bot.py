@@ -248,6 +248,7 @@ class MyRoutesStates(StatesGroup):
 class AdminAdminStates(StatesGroup):
     add_admin_wait = State()
     remove_admin_wait = State()
+    add_admin_info = State()  # 🆕 новий стан
 
 
 # ====================== START / CANCEL / HOME ======================
@@ -785,18 +786,40 @@ async def add_admin_prompt(msg: types.Message, state: FSMContext):
     async def add_admin_by_forward(msg: types.Message, state: FSMContext):
         new_id = msg.forward_from.id
         a = load_admins()
-        exists = any(x["id"] == new_id for x in a["admins"])
-        if not exists:
-            a["admins"].append({
-                "id": new_id,
-                "name": msg.forward_from.full_name if msg.forward_from else "Без імені",
-                "phone": "—"
-            })
-            save_admins(a)
-            await msg.answer(f"✅ Додано адміністратора: {new_id}")
-        else:
+        exists = any(x["id"] == new_id for x in a.get("admins", []))
+        if exists:
             await msg.answer("❗ Цей користувач уже адміністратор.")
+            await state.clear()
+            await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
+            return
 
+        # Зберігаємо ID тимчасово і питаємо ім’я та телефон
+        await state.update_data(new_admin_id=new_id)
+        await msg.answer(
+            "✏️ Введіть ім’я та номер телефону адміністратора у форматі:\n"
+            "`Ім’я Прізвище +380XXXXXXXXX`",
+            parse_mode="Markdown"
+        )
+        await state.set_state(AdminAdminStates.add_admin_info)
+    @dp.message(AdminAdminStates.add_admin_info)
+    async def add_admin_save_info(msg: types.Message, state: FSMContext):
+        data = await state.get_data()
+        new_id = data.get("new_admin_id")
+        parts = msg.text.strip().split()
+
+        if len(parts) < 2:
+            await msg.answer("❌ Формат неправильний. Приклад:\n`Іван Петренко +380501112233`", parse_mode="Markdown")
+            return
+
+        # визначаємо телефон і ім’я
+        phone = parts[-1] if parts[-1].startswith("+") else "—"
+        name = " ".join(parts[:-1]).strip()
+
+        a = load_admins()
+        a["admins"].append({"id": new_id, "name": name, "phone": phone})
+        save_admins(a)
+
+        await msg.answer(f"✅ Додано адміністратора:\n👤 {name}\n📞 {phone}\n🆔 {new_id}")
         await state.clear()
         await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
 
