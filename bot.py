@@ -231,6 +231,11 @@ class MyRoutesStates(StatesGroup):
     manual_time = State()
 
 
+class AdminAdminStates(StatesGroup):
+    add_admin_wait = State()
+    remove_admin_wait = State()
+
+
 # ====================== START / CANCEL / HOME ======================
 @dp.message(CommandStart())
 async def start(msg: types.Message, state: FSMContext):
@@ -760,7 +765,6 @@ async def add_admin_prompt(msg: types.Message, state: FSMContext):
         "Надішліть ID користувача (числом) або перешліть його повідомлення.")
     await state.set_state(AdminAdminStates.add_admin_wait)
 
-
     # ---- Додавання адміністратора ----
     @dp.message(F.forward_from, AdminAdminStates.add_admin_wait)
     async def add_admin_by_forward(msg: types.Message, state: FSMContext):
@@ -774,7 +778,6 @@ async def add_admin_prompt(msg: types.Message, state: FSMContext):
             await msg.answer("❗ Цей користувач уже адміністратор.")
         await state.clear()
         await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
-
 
     @dp.message(AdminAdminStates.add_admin_wait)
     async def add_admin_by_id(msg: types.Message, state: FSMContext):
@@ -791,6 +794,7 @@ async def add_admin_prompt(msg: types.Message, state: FSMContext):
             await msg.answer("❌ Введіть числовий ID.")
         await state.clear()
         await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
+
 
 @dp.message(F.text == "➖ Видалити адміністратора")
 async def remove_admin_prompt(msg: types.Message, state: FSMContext):
