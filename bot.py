@@ -833,12 +833,16 @@ async def remove_admin(msg: types.Message, state: FSMContext):
     try:
         rid = int(msg.text.strip())
         a = load_admins()
-        if rid in a["admins"]:
-            a["admins"].remove(rid)
-            save_admins(a)
-            await msg.answer(f"🗑 Видалено адміністратора: {rid}")
-        else:
-            await msg.answer("Такого адміністратора немає.")
+            # знайдемо адміністратора по ID серед словників
+            admins_list = a.get("admins", [])
+            target = next((x for x in admins_list if x.get("id") == rid), None)
+
+            if target:
+                a["admins"] = [x for x in admins_list if x.get("id") != rid]
+                save_admins(a)
+                await msg.answer(f"🗑 Видалено адміністратора: {rid}")
+            else:
+                await msg.answer("Такого адміністратора немає.")
     except:
         await msg.answer("❌ Невірний формат ID.")
     await state.clear()
