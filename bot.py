@@ -918,39 +918,44 @@ async def routes_assign_driver(msg: types.Message, state: FSMContext):
         reply_markup=main_menu(msg.from_user.id))
 
 
-# ---- Блокування рейсів (водій або адмін) ----
-@dp.message(F.text == "🚫 Заблокувати рейс")
-async def lock_trip(msg: types.Message):
-    if not is_driver(msg.from_user.id) and not is_admin(msg.from_user.id):
-        await msg.answer("⛔ У вас немає прав блокувати рейси.")
-        return
-    await msg.answer("Введіть ключ рейсу у форматі: YYYY-MM-DD HH:MM Напрямок")
-    await dp.storage.set_state(msg.from_user.id, "lock_route_wait")
+    # ---- Блокування рейсів (водій або адмін) ----
+    class LockRouteStates(StatesGroup):
+        lock_route_wait = State()
+        unlock_route_wait = State()
 
 
-@dp.message(state="lock_route_wait")
-async def do_lock_trip(msg: types.Message, state: FSMContext):
-    route_key = msg.text.strip()
-    lock_route(route_key)
-    await msg.answer(f"🔒 Рейс {route_key} заблоковано для бронювання.")
-    await state.clear()
+    @dp.message(F.text == "🚫 Заблокувати рейс")
+    async def lock_trip(msg: types.Message, state: FSMContext):
+        if not is_driver(msg.from_user.id) and not is_admin(msg.from_user.id):
+            await msg.answer("⛔ У вас немає прав блокувати рейси.")
+            return
+        await msg.answer("Введіть ключ рейсу у форматі: YYYY-MM-DD HH:MM Напрямок")
+        await state.set_state(LockRouteStates.lock_route_wait)
 
 
-@dp.message(F.text == "✅ Розблокувати рейс")
-async def unlock_trip(msg: types.Message):
-    if not is_driver(msg.from_user.id) and not is_admin(msg.from_user.id):
-        await msg.answer("⛔ У вас немає прав.")
-        return
-    await msg.answer("Введіть ключ рейсу для розблокування:")
-    await dp.storage.set_state(msg.from_user.id, "unlock_route_wait")
+    @dp.message(LockRouteStates.lock_route_wait)
+    async def do_lock_trip(msg: types.Message, state: FSMContext):
+        route_key = msg.text.strip()
+        lock_route(route_key)
+        await msg.answer(f"🔒 Рейс {route_key} заблоковано для бронювання.")
+        await state.clear()
 
 
-@dp.message(state="unlock_route_wait")
-async def do_unlock_trip(msg: types.Message, state: FSMContext):
-    route_key = msg.text.strip()
-    unlock_route(route_key)
-    await msg.answer(f"🔓 Рейс {route_key} розблоковано.")
-    await state.clear()
+    @dp.message(F.text == "✅ Розблокувати рейс")
+    async def unlock_trip(msg: types.Message, state: FSMContext):
+        if not is_driver(msg.from_user.id) and not is_admin(msg.from_user.id):
+            await msg.answer("⛔ У вас немає прав.")
+            return
+        await msg.answer("Введіть ключ рейсу для розблокування:")
+        await state.set_state(LockRouteStates.unlock_route_wait)
+
+
+    @dp.message(LockRouteStates.unlock_route_wait)
+    async def do_unlock_trip(msg: types.Message, state: FSMContext):
+        route_key = msg.text.strip()
+        unlock_route(route_key)
+        await msg.answer(f"🔓 Рейс {route_key} розблоковано.")
+        await state.clear()
 
 
 # ---- Мої рейси (водій) ----
