@@ -801,6 +801,7 @@ async def add_admin_prompt(msg: types.Message, state: FSMContext):
             parse_mode="Markdown"
         )
         await state.set_state(AdminAdminStates.add_admin_info)
+    
     @dp.message(AdminAdminStates.add_admin_info)
     async def add_admin_save_info(msg: types.Message, state: FSMContext):
         data = await state.get_data()
