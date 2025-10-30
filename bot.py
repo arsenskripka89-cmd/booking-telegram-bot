@@ -55,7 +55,21 @@ def save_routes(r):
 
 
 def load_admins():
-    return _load_json(ADMINS_FILE, {"admins": ADMINS})
+    data = _load_json(ADMINS_FILE, {"admins": []})
+    # автоматично оновлюємо старий формат (якщо просто ID)
+    admins = []
+    for a in data.get("admins", []):
+        if isinstance(a, int):
+            admins.append({"id": a, "name": "Без імені", "phone": "—"})
+        else:
+            admins.append({
+                "id": int(a.get("id")),
+                "name": a.get("name", "Без імені"),
+                "phone": a.get("phone", "—")
+            })
+    data["admins"] = admins
+    save_admins(data)
+    return data
 
 
 def save_admins(d):
@@ -136,7 +150,7 @@ def driver_label(d: dict) -> str:
 # ====================== ROLES & MENUS ======================
 def is_admin(uid: int) -> bool:
     admins = load_admins().get("admins", [])
-    return uid in admins or uid in ADMINS
+    return any(a["id"] == uid for a in admins) or uid in ADMINS
 
 
 def is_driver(uid: int) -> bool:
@@ -771,12 +785,18 @@ async def add_admin_prompt(msg: types.Message, state: FSMContext):
     async def add_admin_by_forward(msg: types.Message, state: FSMContext):
         new_id = msg.forward_from.id
         a = load_admins()
-        if new_id not in a["admins"]:
-            a["admins"].append(new_id)
+        exists = any(x["id"] == new_id for x in a["admins"])
+        if not exists:
+            a["admins"].append({
+                "id": new_id,
+                "name": msg.forward_from.full_name if msg.forward_from else "Без імені",
+                "phone": "—"
+            })
             save_admins(a)
             await msg.answer(f"✅ Додано адміністратора: {new_id}")
         else:
             await msg.answer("❗ Цей користувач уже адміністратор.")
+
         await state.clear()
         await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
 
@@ -785,12 +805,17 @@ async def add_admin_prompt(msg: types.Message, state: FSMContext):
         try:
             new_id = int(msg.text.strip())
             a = load_admins()
-            if new_id not in a["admins"]:
-                a["admins"].append(new_id)
+            exists = any(x["id"] == new_id for x in a["admins"])
+            if not exists:
+                a["admins"].append({
+                    "id": new_id,
+                    "name": msg.forward_from.full_name if msg.forward_from else "Без імені",
+                    "phone": "—"
+                })
                 save_admins(a)
                 await msg.answer(f"✅ Додано адміністратора: {new_id}")
             else:
-                await msg.answer("Цей користувач уже адміністратор.")
+                await msg.answer("❗ Цей користувач уже адміністратор.")
         except ValueError:
             await msg.answer("❌ Введіть числовий ID.")
         await state.clear()
