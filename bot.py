@@ -247,8 +247,8 @@ class MyRoutesStates(StatesGroup):
 
 class AdminAdminStates(StatesGroup):
     add_admin_wait = State()
+    add_admin_info = State()
     remove_admin_wait = State()
-    add_admin_info = State()  # 🆕 новий стан
 
 
 # ====================== START / CANCEL / HOME ======================
@@ -778,72 +778,82 @@ async def manage_admins_menu(msg: types.Message, state: FSMContext):
 @dp.message(F.text == "➕ Додати адміністратора")
 async def add_admin_prompt(msg: types.Message, state: FSMContext):
     await msg.answer(
-        "Надішліть ID користувача (числом) або перешліть його повідомлення.")
+        "Надішліть ID користувача (числом) або перешліть його повідомлення."
+    )
     await state.set_state(AdminAdminStates.add_admin_wait)
 
-    # ---- Додавання адміністратора ----
-    @dp.message(F.forward_from, AdminAdminStates.add_admin_wait)
-    async def add_admin_by_forward(msg: types.Message, state: FSMContext):
-        new_id = msg.forward_from.id
-        a = load_admins()
-        exists = any(x["id"] == new_id for x in a.get("admins", []))
-        if exists:
-            await msg.answer("❗ Цей користувач уже адміністратор.")
-            await state.clear()
-            await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
-            return
+# 1) Додаємо адміністраторa через пересилання
+@dp.message(F.forward_from, AdminAdminStates.add_admin_wait)
+async def add_admin_by_forward(msg: types.Message, state: FSMContext):
+    new_id = msg.forward_from.id
+    a = load_admins()
+    exists = any(x.get("id") == new_id for x in a.get("admins", []))
+    if exists:
+        await msg.answer("❗ Цей користувач уже адміністратор.")
+        await state.clear()
+        await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
+        return
 
-        # Зберігаємо ID тимчасово і питаємо ім’я та телефон
-        await state.update_data(new_admin_id=new_id)
+    # зберігаємо тимчасово ID і просимо ім’я/телефон
+    await state.update_data(new_admin_id=new_id)
+    await msg.answer(
+        "✏️ Введіть ім’я та номер телефону адміністратора у форматі:\n"
+        "👉 «Ім’я Прізвище +380XXXXXXXXX»",
+        parse_mode="Markdown"
+    )
+    await state.set_state(AdminAdminStates.add_admin_info)
+
+# 2) Додаємо адміністраторa через введений ID
+@dp.message(AdminAdminStates.add_admin_wait)
+async def add_admin_by_id(msg: types.Message, state: FSMContext):
+    try:
+        new_id = int(msg.text.strip())
+    except ValueError:
+        await msg.answer("❌ Введіть числовий ID.")
+        return
+
+    a = load_admins()
+    exists = any(x.get("id") == new_id for x in a.get("admins", []))
+    if exists:
+        await msg.answer("❗ Цей користувач уже адміністратор.")
+        await state.clear()
+        await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
+        return
+
+    # зберігаємо тимчасово ID і просимо ім’я/телефон
+    await state.update_data(new_admin_id=new_id)
+    await msg.answer(
+        "✏️ Введіть ім’я та номер телефону адміністратора у форматі:\n"
+        "👉 «Ім’я Прізвище +380XXXXXXXXX»",
+        parse_mode="Markdown"
+    )
+    await state.set_state(AdminAdminStates.add_admin_info)
+
+# 3) Приймаємо «Ім’я Прізвище +380ХХХ…», зберігаємо у файл
+@dp.message(AdminAdminStates.add_admin_info)
+async def add_admin_save_info(msg: types.Message, state: FSMContext):
+    data = await state.get_data()
+    new_id = data.get("new_admin_id")
+
+    parts = msg.text.strip().split()
+    if len(parts) < 2:
         await msg.answer(
-            "✏️ Введіть ім’я та номер телефону адміністратора у форматі:\n"
-            "`Ім’я Прізвище +380XXXXXXXXX`",
+            "❌ Формат неправильний. Приклад:\n"
+            "Іван Петренко +380501112233",
             parse_mode="Markdown"
         )
-        await state.set_state(AdminAdminStates.add_admin_info)
-    
-    @dp.message(AdminAdminStates.add_admin_info)
-    async def add_admin_save_info(msg: types.Message, state: FSMContext):
-        data = await state.get_data()
-        new_id = data.get("new_admin_id")
-        parts = msg.text.strip().split()
+        return
 
-        if len(parts) < 2:
-            await msg.answer("❌ Формат неправильний. Приклад:\n`Іван Петренко +380501112233`", parse_mode="Markdown")
-            return
+    phone = parts[-1] if parts[-1].startswith("+") else "—"
+    name = " ".join(parts[:-1]).strip() if phone != "—" else " ".join(parts).strip()
 
-        # визначаємо телефон і ім’я
-        phone = parts[-1] if parts[-1].startswith("+") else "—"
-        name = " ".join(parts[:-1]).strip()
+    a = load_admins()
+    a.setdefault("admins", []).append({"id": new_id, "name": name, "phone": phone})
+    save_admins(a)
 
-        a = load_admins()
-        a["admins"].append({"id": new_id, "name": name, "phone": phone})
-        save_admins(a)
-
-        await msg.answer(f"✅ Додано адміністратора:\n👤 {name}\n📞 {phone}\n🆔 {new_id}")
-        await state.clear()
-        await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
-
-    @dp.message(AdminAdminStates.add_admin_wait)
-    async def add_admin_by_id(msg: types.Message, state: FSMContext):
-        try:
-            new_id = int(msg.text.strip())
-            a = load_admins()
-            exists = any(x["id"] == new_id for x in a["admins"])
-            if not exists:
-                a["admins"].append({
-                    "id": new_id,
-                    "name": msg.forward_from.full_name if msg.forward_from else "Без імені",
-                    "phone": "—"
-                })
-                save_admins(a)
-                await msg.answer(f"✅ Додано адміністратора: {new_id}")
-            else:
-                await msg.answer("❗ Цей користувач уже адміністратор.")
-        except ValueError:
-            await msg.answer("❌ Введіть числовий ID.")
-        await state.clear()
-        await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
+    await msg.answer(f"✅ Додано адміністратора:\n👤 {name}\n📞 {phone}\n🆔 {new_id}")
+    await state.clear()
+    await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
 
 
 @dp.message(F.text == "➖ Видалити адміністратора")
