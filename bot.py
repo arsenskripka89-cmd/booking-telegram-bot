@@ -758,45 +758,47 @@ async def manage_admins_menu(msg: types.Message, state: FSMContext):
 async def add_admin_prompt(msg: types.Message, state: FSMContext):
     await msg.answer(
         "Надішліть ID користувача (числом) або перешліть його повідомлення.")
-    await state.set_state("add_admin_wait")
+    await state.set_state(AdminAdminStates.add_admin_wait)
 
 
-@dp.message(F.forward_from, state="add_admin_wait")
-async def add_admin_by_forward(msg: types.Message, state: FSMContext):
-    new_id = msg.forward_from.id
-    a = load_admins()
-    if new_id not in a["admins"]:
-        a["admins"].append(new_id)
-        save_admins(a)
-        await msg.answer(f"✅ Додано адміністратора: {new_id}")
-    else:
-        await msg.answer("❗ Цей користувач уже адміністратор.")
-    await state.clear()
-
-
-@dp.message(state="add_admin_wait")
-async def add_admin_by_id(msg: types.Message, state: FSMContext):
-    try:
-        new_id = int(msg.text.strip())
+    # ---- Додавання адміністратора ----
+    @dp.message(F.forward_from, AdminAdminStates.add_admin_wait)
+    async def add_admin_by_forward(msg: types.Message, state: FSMContext):
+        new_id = msg.forward_from.id
         a = load_admins()
         if new_id not in a["admins"]:
             a["admins"].append(new_id)
             save_admins(a)
             await msg.answer(f"✅ Додано адміністратора: {new_id}")
         else:
-            await msg.answer("Цей користувач уже адміністратор.")
-    except ValueError:
-        await msg.answer("❌ Введіть числовий ID.")
-    await state.clear()
+            await msg.answer("❗ Цей користувач уже адміністратор.")
+        await state.clear()
+        await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
 
+
+    @dp.message(AdminAdminStates.add_admin_wait)
+    async def add_admin_by_id(msg: types.Message, state: FSMContext):
+        try:
+            new_id = int(msg.text.strip())
+            a = load_admins()
+            if new_id not in a["admins"]:
+                a["admins"].append(new_id)
+                save_admins(a)
+                await msg.answer(f"✅ Додано адміністратора: {new_id}")
+            else:
+                await msg.answer("Цей користувач уже адміністратор.")
+        except ValueError:
+            await msg.answer("❌ Введіть числовий ID.")
+        await state.clear()
+        await msg.answer("Готово ✅", reply_markup=main_menu(msg.from_user.id))
 
 @dp.message(F.text == "➖ Видалити адміністратора")
 async def remove_admin_prompt(msg: types.Message, state: FSMContext):
     await msg.answer("Введіть ID адміністратора, якого потрібно видалити:")
-    await state.set_state("remove_admin_wait")
+    await state.set_state(AdminAdminStates.remove_admin_wait)
 
 
-@dp.message(state="remove_admin_wait")
+@dp.message(AdminAdminStates.remove_admin_wait)
 async def remove_admin(msg: types.Message, state: FSMContext):
     try:
         rid = int(msg.text.strip())
