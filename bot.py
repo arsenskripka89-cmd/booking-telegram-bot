@@ -524,6 +524,7 @@ async def admin_panel(msg: types.Message, state: FSMContext):
     if is_admin(uid):
         rows.insert(3, [KeyboardButton(text="📅 Керування рейсами")])
         rows.insert(4, [KeyboardButton(text="👨‍✈️ Керування водіями")])
+        rows.insert(5, [KeyboardButton(text="🛠 Керування адміністраторами")])
     rows.append([KeyboardButton(text="🏠 Повернутись в головне меню")])
 
     await msg.answer("👨‍✈️ Адмін-панель: оберіть дію",
@@ -892,9 +893,14 @@ async def routes_assign_driver(msg: types.Message, state: FSMContext):
         await msg.answer("Введіть або виберіть кнопку із ID водія.")
         return
     driver_id = int(m.group(1))
+    # ✅ дозволяємо також адміністраторам призначати себе
     if not find_driver_by_id(driver_id):
-        await msg.answer("Це не ID водія зі списку.")
-        return
+        if driver_id == msg.from_user.id and is_admin(msg.from_user.id):
+            pass  # адмін може сам себе призначити
+        else:
+            await msg.answer("Це не ID водія зі списку.")
+            return
+
 
     ud = await state.get_data()
     date_str, time_str, direction = ud["date"], ud["time"], ud["direction"]
