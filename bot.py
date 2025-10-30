@@ -761,7 +761,7 @@ async def add_admin_prompt(msg: types.Message, state: FSMContext):
     await state.set_state("add_admin_wait")
 
 
-@dp.message(state="add_admin_wait", F.forward_from)
+@dp.message(F.forward_from, state="add_admin_wait")
 async def add_admin_by_forward(msg: types.Message, state: FSMContext):
     new_id = msg.forward_from.id
     a = load_admins()
